@@ -1,1 +1,9 @@
 c:\users\валерий\documents\visual studio 2013\Projects\Mark\Mark\bin\Debug\Mark.exe.config
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\bin\Debug\Mark.exe.config
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\bin\Debug\Mark.exe
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\bin\Debug\Mark.pdb
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\bin\Debug\nunit.framework.dll
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\bin\Debug\nunit.framework.xml
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\obj\Debug\Mark.csprojResolveAssemblyReference.cache
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\obj\Debug\Mark.exe
+C:\Users\Валерий\Documents\Kontur school\01-mark\Mark\Mark\obj\Debug\Mark.pdb
