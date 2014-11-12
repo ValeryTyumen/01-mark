@@ -1,24 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using NUnit;
-using NUnit.Framework;
+﻿using NUnit.Framework;
 
 namespace Mark
 {
     class MarkDownProcessor_should
     {
-        private IMarkDownProcessor processor;
-
-        [SetUp]
-        public void arrange_processor()
-        {
-            processor = new MarkDownProcessor();
-        }
-
+        private MarkDownProcessor processor = new MarkDownProcessor();
+        
         [Test]
         public void tag_one_paragraph()
         {
@@ -66,7 +53,7 @@ namespace Mark
             var htmlText = processor.TranslateToHtml("blah blah _cursive_ blah blah");
             Assert.AreEqual("<p>blah blah <em>cursive</em> blah blah</p>", htmlText);
         }
-
+        
         [Test]
         public void tag_cursive_all_text()
         {
@@ -87,7 +74,7 @@ namespace Mark
             var htmlText = processor.TranslateToHtml("__bold__");
             Assert.AreEqual("<p><strong>bold</strong></p>", htmlText);
         }
-
+        
         [Test]
         public void tag_cursive_in_bold_text()
         { 
@@ -101,7 +88,7 @@ namespace Mark
             var htmlText = processor.TranslateToHtml("blah _blah __blah__ blah_ blah");
             Assert.AreEqual("<p>blah <em>blah <strong>blah</strong> blah</em> blah</p>", htmlText);
         }
-
+        
         [Test]
         public void not_tag_underscore_inside_text_and_numbers()
         {
@@ -113,19 +100,26 @@ namespace Mark
         [Test]
         public void screen_cursive_marks()
         {
-            var htmlText = processor.TranslateToHtml("\\_1\\_ _3 4\\_ 5_");
-            Assert.AreEqual("<p>_1_ <em>3 4_ 5</em></p>", htmlText);
+            var htmlText = processor.TranslateToHtml(@"\_1\_ _3 4\_ 5_");
+            Assert.AreEqual(@"<p>\_1\_ <em>3 4\_ 5</em></p>", htmlText);
         }
-
+        
         [Test]
         public void screen_bold_marks()
         {
-            var htmlText = processor.TranslateToHtml("\\__1\\__ __3 4\\__ 5__");
-            Assert.AreEqual("<p>__1__ <strong>3 4__ 5</strong></p>", htmlText);
+            var htmlText = processor.TranslateToHtml(@"\__1\__ __3 4\__ 5__");
+            Assert.AreEqual(@"<p>\__1\__ <strong>3 4\__ 5</strong></p>", htmlText);
         }
 
         [Test]
-        public void tag_coded_text()
+        public void add_code_tags()
+        {
+            var htmlText = processor.TranslateToHtml("blah ` blah blah ` blah");
+            Assert.AreEqual("<p>blah <code> blah blah </code> blah</p>", htmlText);
+        }
+
+        [Test]
+        public void not_tag_coded_text()
         {
             var htmlText = processor.TranslateToHtml("blah `blah _blah_ __blah__ blah` blah");
             Assert.AreEqual("<p>blah <code>blah _blah_ __blah__ blah</code> blah</p>", htmlText);
@@ -137,6 +131,20 @@ namespace Mark
             const string text = "blah _blah `blah __blah blah";
             var htmlText = processor.TranslateToHtml(text);
             Assert.AreEqual("<p>" + text + "</p>", htmlText);
+        }
+
+        [Test]
+        public void work_with_numbers()
+        {
+            var htmlText = processor.TranslateToHtml("1 _2_ __3__ 4");
+            Assert.AreEqual("<p>1 <em>2</em> <strong>3</strong> 4</p>", htmlText);
+        }
+
+        [Test]
+        public void work_with_russian_symbols()
+        {
+            var htmlText = processor.TranslateToHtml("бла _бла_ __бла__ бла");
+            Assert.AreEqual("<p>бла <em>бла</em> <strong>бла</strong> бла</p>", htmlText);
         }
     }
 }

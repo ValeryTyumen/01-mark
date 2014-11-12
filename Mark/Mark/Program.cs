@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
+using System.IO;
 
 namespace Mark
 {
@@ -13,18 +14,54 @@ namespace Mark
     {
         static void Main(string[] args)
         {
-
+            if (args.Length != 1)
+            {
+                Console.WriteLine("Incorrect arguments");
+                return;
+            }
+            var file = args[0];
+            if (! File.Exists(file))
+            {
+                Console.WriteLine("File doesn't exist");
+                return;
+            }
+            var processor = new MarkDownProcessor();
+            var text = "";
+            using (var reader = new StreamReader(file))
+                text = reader.ReadToEnd();
+            using (var writer = new StreamWriter(args[0] + ".html"))
+                writer.Write(processor.TranslateToHtml(text));
         }
     }
 
-    public interface IMarkDownProcessor
+    enum Tag
     {
-        string TranslateToHtml(string text);
+        Em,
+        Strong,
+        Code
+    };
+
+    enum TagType
+    {
+        Opening,
+        Closing
+    };
+
+    internal class TagToPaste
+    {
+        public Tag Tag { get; private set; }
+        public TagType Type { get; private set; }
+        public int Position { get; private set; }
+
+        public TagToPaste(Tag tag, TagType type, int position)
+        {
+            Tag = tag;
+            Type = type;
+            Position = position;
+        }
     }
 
-
-
-    public class MarkDownProcessor : IMarkDownProcessor
+    public class MarkDownProcessor
     {
         private static string TranslateNewlines(string text)
         {
@@ -33,180 +70,150 @@ namespace Mark
             return "<p>" + newParagraphRegex.Replace(text, "</p><p>") + "</p>";
         }
 
-        private enum Tag
+        private static Tuple<Tag, TagType> GetTagParams(string mark)
         {
-            Em,
-            Strong,
-            Code
-        };
+            if (mark == "`")
+                return Tuple.Create(Tag.Code, TagType.Opening);
+            var type = TagType.Opening;
+            if (char.IsLetterOrDigit(mark[0]))
+                type = TagType.Closing;
+            var tag = Tag.Em;
+            if (mark.Length == 3)
+                tag = Tag.Strong;
+            return Tuple.Create(tag, type);
+        }
 
-        private readonly static Dictionary<Tag, Regex> MarkingUnderscoreRegexes =
-            new Dictionary<Tag, Regex>
-        {
-            {Tag.Em, new Regex(@"((?<![\w_])_(?![\W_])|(?<=[^\W_]|\\)_(?![\w_]))")},
-            {Tag.Strong, new Regex(@"((?<=\W)__(?=\w)|(?<=\w|\\)__(?=\W))")}
-        };
+        private static Regex TagRegex = new Regex(@"((?<!\\)`|[^\w_\\]_{1,2}(?![\W_])|[^\W_\\]_{1,2}(?![\w_]))");
 
-        private readonly static Dictionary<Tag, string> TagNames =
-            new Dictionary<Tag, string>
+        private static int GetMatchIndex(Capture match)
         {
-            {Tag.Em, "em"},
-            {Tag.Strong, "strong"},
-            {Tag.Code, "code"}
-        };
+            if (match.Value == "`")
+                return match.Index;
+            else
+                return match.Index + 1;
+        }
 
-        private static string TranslateUnderscores(string text, Tag marking)
+        private static IEnumerable<TagToPaste> GetTagsToPaste(string text)
         {
-            var markingUnderscoreRegex = MarkingUnderscoreRegexes[marking];
-            var builder = new StringBuilder();
-            var match = markingUnderscoreRegex.Match(text);
-            if (! match.Success)
-                return text;
-            var lastMatchIndex = 0;
-            while (match.Success)
+            var result = new Stack<TagToPaste>();
+            var bracketStack = new Stack<TagToPaste>();
+            var gotCodeTag = false;
+            foreach (Match match in TagRegex.Matches(text))
             {
-                builder.Append(text.Substring(lastMatchIndex, match.Index - lastMatchIndex));
-                lastMatchIndex = match.Index + match.Length;
-                builder.Append(TranslateOneUnderscoreMark(text, match.Index, marking));
-                match = match.NextMatch();
-            }
-            builder.Append(text.Substring(lastMatchIndex, text.Length - lastMatchIndex));
-            return builder.ToString();
-        }
-
-
-        private readonly static Regex LetterRegex = new Regex(@"([^\W_]|\\)");
-
-        private static bool IsLetter(char sign)
-        {
-            string signString = sign.ToString();
-            return LetterRegex.Match(signString).ToString() == signString;
-        }
-
-        private static string TranslateOneUnderscoreMark
-            (string text, int index, Tag marking)
-        {
-            var markLength = (marking == Tag.Em) ? 1 : 2;
-            var tag = TagNames[marking];
-            if (IsLetter(text[index - 1]))
-                return "</" + tag + ">";
-            else
-                return "<" + tag + ">";
-        }
-
-        private static string ScreenSomeUnderscores(string text, Tag marking)
-        {
-            var wrongTagRegex = new Regex(@"\\</?" + TagNames[marking] + @">");
-            if (marking == Tag.Em)
-                return wrongTagRegex.Replace(text, "_");
-            else
-                return wrongTagRegex.Replace(text, "__");
-        }
-
-        public static string TranslateBackticks(string text)
-        {
-            var builder = new StringBuilder();
-            var lastBacktickIndex = 0;
-            var lastWasClosing = true;
-            for (var i = 0; i < text.Length; i++)
-                if (text[i] == '`')
+                var tagParams = GetTagParams(match.Value);
+                var current = new TagToPaste(tagParams.Item1, tagParams.Item2, GetMatchIndex(match));
+                if (bracketStack.Count == 0)
                 {
-                    if (lastWasClosing)
-                    {
-                        builder.Append(text.Substring(lastBacktickIndex, i - lastBacktickIndex));
-                        builder.Append("<code>");
-                        lastBacktickIndex = i + 1;
-                        lastWasClosing = false;
-                    }
-                    else
-                    {
-                        var subString = text.Substring(lastBacktickIndex, i - lastBacktickIndex);
-                        builder.Append(TranslateOnePairOfBackticks(subString));
-                        builder.Append("</code>");
-                        lastBacktickIndex = i + 1;
-                        lastWasClosing = true;
-                    }
+                    bracketStack.Push(current);
+                    if (current.Tag == Tag.Code)
+                        gotCodeTag = true;
+                    continue;
                 }
-            var tail = text.Substring(lastBacktickIndex, text.Length - lastBacktickIndex);
-            builder.Append(tail);
-            return builder.ToString();
+                if (MarkIsBacktick(current, bracketStack, result, ref gotCodeTag)) continue;
+                AddUnderscoreTag(current, bracketStack, result);
+            }
+            return result.OrderBy(z => z.Position);
         }
 
-        public static string TranslateOnePairOfBackticks(string text)
+        private static void AddUnderscoreTag
+            (TagToPaste current, Stack<TagToPaste> bracketStack, Stack<TagToPaste> result)
         {
-            text = text.Replace("<em>", "_");
-            text = text.Replace("</em>", "_");
-            text = text.Replace("<strong>", "__");
-            text = text.Replace("</strong>", "__");
-            return text;
-        }
-
-        private static string RemoveUnpairedTags(string text, Tag marking)
-        {
-            var builder = new StringBuilder();
-            var mark = "_";
-            if (marking == Tag.Strong)
-                mark = "__";
-            if (marking == Tag.Code)
-                mark = "`";
-            var openingTag = "<" + TagNames[marking] + ">";
-            var tagRegex = new Regex(@"</?" + TagNames[marking] + ">");
-            var lastWasClosing = true;
-            var lastCorrectMatchIndex = 0;
-            foreach (Match match in tagRegex.Matches(text))
+            var tagInStack = bracketStack.Peek();
+            if (current.Type == TagType.Opening)
             {
-                if (lastWasClosing)
+                if (bracketStack.Count == 3)
+                    return;
+                if (tagInStack.Tag == current.Tag && tagInStack.Type == TagType.Opening)
+                    return;
+                bracketStack.Push(current);
+            }
+            else
+            {
+                if (tagInStack.Tag == current.Tag && tagInStack.Type == TagType.Opening)
                 {
-                    if (match.Value == openingTag)
+                    bracketStack.Pop();
+                    result.Push(tagInStack);
+                    result.Push(current);
+                }
+            }
+        }
+
+        private static bool MarkIsBacktick(TagToPaste current, Stack<TagToPaste> bracketStack, Stack<TagToPaste> result,
+            ref bool gotCodeTag)
+        {
+            var tagInStack = bracketStack.Peek();
+            if (current.Tag == Tag.Code)
+            {
+                if (gotCodeTag)
+                {
+                    while (tagInStack.Tag != Tag.Code)
+                        tagInStack = bracketStack.Pop();
+                    if (result.Count != 0)
                     {
-                        var substring = text.Substring(lastCorrectMatchIndex, match.Index - lastCorrectMatchIndex);
-                        builder.Append(RemoveAllTags(substring, marking));
-                        lastWasClosing = false;
-                        lastCorrectMatchIndex = match.Index + match.Length;
+                        var fakeResult = result.Peek();
+                        while (result.Count != 0 && fakeResult.Position > tagInStack.Position)
+                            fakeResult = result.Pop();
                     }
+                    result.Push(tagInStack);
+                    current = new TagToPaste(current.Tag, TagType.Closing, current.Position);
+                    result.Push(current);
+                    gotCodeTag = false;
                 }
                 else
                 {
-                    if (match.Value != openingTag)
-                    {
-                        var substring = text.Substring(lastCorrectMatchIndex, match.Index - lastCorrectMatchIndex);
-                        builder.Append(openingTag);
-                        builder.Append(RemoveAllTags(substring, marking));
-                        builder.Append(match.Value);
-                        lastWasClosing = true;
-                        lastCorrectMatchIndex = match.Index + match.Length;
-                    }
+                    gotCodeTag = true;
+                    bracketStack.Push(current);
                 }
+                return true;
             }
-            if (!lastWasClosing)
-                builder.Append(mark);
-            var tail = text.Substring(lastCorrectMatchIndex, text.Length - lastCorrectMatchIndex);
-            builder.Append(RemoveAllTags(tail, marking));
-            return builder.ToString();
+            return false;
         }
 
-        private static string RemoveAllTags(string text, Tag marking)
+        private static string CreateTagString(Tag tag, TagType type)
         {
-            var mark = "_";
-            if (marking == Tag.Strong)
-                mark = "__";
-            if (marking == Tag.Code)
-                mark = "`";
-            var tagRegex = new Regex(@"</?" + TagNames[marking] + ">");
-            return tagRegex.Replace(text, mark);
+            var result = "<";
+            if (type == TagType.Closing)
+                result += "/";
+            switch (tag)
+            {
+                case Tag.Code:
+                    result += "code";
+                    break;
+                case Tag.Em:
+                    result += "em";
+                    break;
+                case Tag.Strong:
+                    result += "strong";
+                    break;
+            }
+            return result + ">";
+        }
+
+        private static int GetTagLength(Tag tag)
+        {
+            if (tag == Tag.Strong)
+                return 2;
+            return 1;
+        }
+
+        private static string ReplaceMarksWithTags(string text)
+        {
+            var builder = new StringBuilder();
+            var lastIndex = 0;
+            foreach (var tagToPaste in GetTagsToPaste(text))
+            {
+                builder.Append(text.Substring(lastIndex, tagToPaste.Position - lastIndex));
+                builder.Append(CreateTagString(tagToPaste.Tag, tagToPaste.Type));
+                lastIndex = tagToPaste.Position + GetTagLength(tagToPaste.Tag);
+            }
+            builder.Append(text.Substring(lastIndex, text.Length - lastIndex));
+            return builder.ToString();
         }
 
         public string TranslateToHtml(string text)
         {
             text = TranslateNewlines(text);
-            text = TranslateUnderscores(text, Tag.Em);
-            text = TranslateUnderscores(text, Tag.Strong);
-            text = ScreenSomeUnderscores(text, Tag.Em);
-            text = ScreenSomeUnderscores(text, Tag.Strong);
-            text = RemoveUnpairedTags(text, Tag.Em);
-            text = RemoveUnpairedTags(text, Tag.Strong);
-            text = TranslateBackticks(text);
-            text = RemoveUnpairedTags(text, Tag.Code);
+            text = ReplaceMarksWithTags(text);
             return text;
         }
     }
